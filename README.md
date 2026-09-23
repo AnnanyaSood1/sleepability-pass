@@ -215,14 +215,7 @@ docs/img/                  one-page design-rationale figure (png + pdf)
 
 **Author:** Annanya Sood — <sood0142@gmail.com>
 
-This is a proof-of-work artifact for a Master's research proposal. I scoped the
-project and directed its design — which piece of the larger checker to build, the
-argument-sensitivity target, the honest boundaries. The implementation (the LLVM
-pass, CMake build, test suite, scripts, CI, this documentation, and the
-design-rationale figure) was produced in collaboration with an AI assistant
-(Claude, by Anthropic) working to that direction. I am reviewing and verifying
-each component and take responsibility for the artifact as published; the design
-reasoning and its limitations are set out in [`docs/DESIGN.md`](docs/DESIGN.md).
+I scoped and directed this project: which piece of the larger checker to build (the C-side alone, decoupled from the Rust half), the argument-sensitivity target, and the requirement that the tool's boundaries be stated honestly and its tests mirror a fault-injection design. The analysis design and implementation — the SCC-based bottom-up fixpoint, the known-bits handling of GFP flags, the decision to over-approximate unknown flags, and the LLVM code that realizes them — were produced in collaboration with an AI assistant (Claude, by Anthropic) to that direction, and are documented in `docs/DESIGN.md`. I am working through each component to be able to defend it independently, and take responsibility for the artifact as published.
 
 The figures in `docs/img/` are AI-rendered from `docs/DESIGN.md`.
 
