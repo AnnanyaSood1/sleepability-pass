@@ -1,0 +1,6 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/01_direct_mutex.ll
+
+  [MAY SLEEP  ]  rust_helper_mutex_lock  -- calls blocking primitive 'mutex_lock()'
+
+summary: 1 may-sleep, 0 atomic-safe (1 functions analysed)

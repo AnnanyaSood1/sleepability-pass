@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you refer to this work, please cite it as below."
+title: "Sleepability Pass: a C-side CanSleep summary for the Linux kernel"
+abstract: >-
+  A standalone out-of-tree LLVM module pass that computes, per function, whether
+  it may sleep (the kernel CanSleep property) by propagating reachability to
+  blocking primitives bottom-up over the call graph's strongly connected
+  components, with argument-sensitive handling of kmalloc gfp flags. The C-side
+  (callee-summary) half of a proposed cross-language sleepability checker (CLSC).
+authors:
+  - family-names: Sood
+    given-names: Annanya
+    email: sood0142@gmail.com
+type: software
+license: MIT
+keywords:
+  - static analysis
+  - LLVM
+  - program analysis
+  - Linux kernel
+  - compilers
+date-released: "2026-09-23"

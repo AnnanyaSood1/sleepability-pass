@@ -1,0 +1,7 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/05_bitmask.ll
+
+  [MAY SLEEP  ]  wrap_alloc          -- calls kmalloc() with direct-reclaim gfp flags (may sleep)
+  [MAY SLEEP  ]  wrap_alloc_unknown  -- calls kmalloc() with non-constant gfp flags (conservatively may sleep)
+
+summary: 2 may-sleep, 0 atomic-safe (2 functions analysed)

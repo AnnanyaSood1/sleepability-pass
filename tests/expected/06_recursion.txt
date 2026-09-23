@@ -1,0 +1,9 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/06_recursion.ll
+
+  [ATOMIC-SAFE]  even  -- no path to a blocking primitive
+  [ATOMIC-SAFE]  odd   -- no path to a blocking primitive
+  [MAY SLEEP  ]  ping  -- calls blocking primitive 'might_sleep()'
+  [MAY SLEEP  ]  pong  -- in a call cycle with may-sleep function ping()
+
+summary: 2 may-sleep, 2 atomic-safe (4 functions analysed)

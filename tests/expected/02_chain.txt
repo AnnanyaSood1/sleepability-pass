@@ -1,0 +1,8 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/02_chain.ll
+
+  [MAY SLEEP  ]  level1  -- calls blocking primitive 'schedule()'
+  [MAY SLEEP  ]  level2  -- reaches may-sleep callee level1()
+  [MAY SLEEP  ]  level3  -- reaches may-sleep callee level2()
+
+summary: 3 may-sleep, 0 atomic-safe (3 functions analysed)

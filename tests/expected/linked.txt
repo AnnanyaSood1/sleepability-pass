@@ -1,0 +1,7 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/linked.ll
+
+  [MAY SLEEP  ]  acquire_lock  -- calls blocking primitive 'mutex_lock()'
+  [MAY SLEEP  ]  device_probe  -- reaches may-sleep callee acquire_lock()
+
+summary: 2 may-sleep, 0 atomic-safe (2 functions analysed)

@@ -1,0 +1,8 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/03_nonsleeping.ll
+
+  [ATOMIC-SAFE]  add         -- no path to a blocking primitive
+  [ATOMIC-SAFE]  copy_thing  -- no path to a blocking primitive
+  [ATOMIC-SAFE]  sum_array   -- no path to a blocking primitive
+
+summary: 0 may-sleep, 3 atomic-safe (3 functions analysed)
