@@ -1,7 +1,7 @@
 # Sleepability Pass — a C-side `CanSleep` summary for the Linux kernel
 
-<!-- After the first push, replace USER/REPO below with your GitHub path (e.g. jane/sleepability-pass). -->
-[![build-and-test](https://github.com/USER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/USER/REPO/actions/workflows/ci.yml)
+<!-- After the first push, replace AnnanyaSood1/sleepability-pass below with your GitHub path (e.g. jane/sleepability-pass). -->
+[![build-and-test](https://github.com/AnnanyaSood1/sleepability-pass/actions/workflows/ci.yml/badge.svg)](https://github.com/AnnanyaSood1/sleepability-pass/actions/workflows/ci.yml)
 
 An out-of-tree **LLVM module analysis pass** (new pass manager) that decides, for
 every function in a module, whether it **may sleep**: whether it can, directly or
