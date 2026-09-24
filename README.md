@@ -213,9 +213,28 @@ docs/img/                  one-page design-rationale figure (png + pdf)
 
 ## Authorship and provenance
 
-**Author:** Annanya Sood — <sood0142@gmail.com>
+## Authorship
 
-I scoped and directed this project: which piece of the larger checker to build (the C-side alone, decoupled from the Rust half), the argument-sensitivity target, and the requirement that the tool's boundaries be stated honestly and its tests mirror a fault-injection design. The analysis design and implementation — the SCC-based bottom-up fixpoint, the known-bits handling of GFP flags, the decision to over-approximate unknown flags, and the LLVM code that realizes them — were produced in collaboration with an AI assistant (Claude, by Anthropic) to that direction, and are documented in `docs/DESIGN.md`. I am working through each component to be able to defend it independently, and take responsibility for the artifact as published.
+**Author:** Annanya Sood — <annanyas0142@gmail.com>
+
+I scoped this project and own its design. The decisions are mine: to build the
+C side as a standalone artifact that answers one well-posed question rather
+than a partial version of the whole checker; to make argument sensitivity the
+target, since `kmalloc(size, flags)` is where a name-based analysis stops being
+sufficient and the property becomes a question about a *value*; to propagate
+bottom-up over SCCs so that recursion and mutual cycles collapse to one verdict;
+to over-approximate to MAY SLEEP wherever atomic-safety cannot be proven, so the
+pass fails toward false positives rather than silent misses; and to pair each
+test with a near-miss control, so the suite demonstrates precision and not only
+recall. The limitations section is mine too, and states what the artifact does
+not do.
+
+The implementation — the LLVM pass, the CMake build, the test harness, CI, and
+this documentation — was written with AI assistance (Claude, by Anthropic)
+working to that direction. The analysis design, its soundness argument, and its
+stated boundaries are set out in [`docs/DESIGN.md`](docs/DESIGN.md). I can
+account for each component and the reasoning behind it, and I take
+responsibility for the artifact as published.
 
 The figures in `docs/img/` are AI-rendered from `docs/DESIGN.md`.
 
