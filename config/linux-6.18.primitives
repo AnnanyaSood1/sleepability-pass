@@ -1,0 +1,37 @@
+# Primitive table for Linux 6.18, x86-64 defconfig (CONFIG_PREEMPT_VOLUNTARY,
+# CONFIG_PREEMPT_DYNAMIC, no CONFIG_DEBUG_ATOMIC_SLEEP, no lockdep), used with
+#   opt -load-pass-plugin build/libSleepability.so -passes=sleepability \
+#       -sleepability-primitives=config/linux-6.18.primitives ...
+# It extends the built-in table (mutex_lock, schedule, msleep, might_sleep,
+# kmalloc). Format: 'sleep NAME' or 'gfp NAME ARGINDEX' (0-based).
+#
+# Every entry below is an external function called by rust/helpers/ in 6.18,
+# checked by hand against the 6.18 source. This is NOT a complete list of
+# sleeping kernel functions; it covers what the Rust helpers reach directly.
+
+# --- allocators: may sleep iff the flags argument has __GFP_DIRECT_RECLAIM ---
+gfp krealloc_node_align_noprof   3   # mm/slub.c; flags is the 4th argument
+gfp kvrealloc_node_align_noprof  3   # include/linux/slab.h
+gfp alloc_pages_noprof           0   # include/linux/gfp.h
+gfp dma_alloc_attrs              3   # include/linux/dma-mapping.h
+
+# --- always may sleep ---
+sleep vrealloc_node_align_noprof # mm/vmalloc.c; vmalloc paths call might_sleep(); kept unconditional (conservative)
+sleep __SCT__might_resched       # static call behind might_resched(), i.e. __cond_resched (PREEMPT_DYNAMIC)
+sleep down_read                  # kernel/locking/rwsem.c: might_sleep()
+sleep usleep_range_state         # kernel/time/sleep_timeout.c: schedule_hrtimeout_range()
+sleep _copy_from_user            # include/linux/uaccess.h: might_fault(); a page fault can sleep
+sleep _copy_to_user              # same as _copy_from_user
+sleep request_threaded_irq       # kernel/irq/manage.c: kzalloc(..., GFP_KERNEL)
+sleep __request_region           # kernel/resource.c: alloc_resource(GFP_KERNEL)
+sleep __devm_add_action          # drivers/base/devres.c: allocates with GFP_KERNEL
+sleep device_del                 # drivers/base/core.c: mutex_lock()
+sleep iounmap                    # mm/ioremap.c: vunmap()
+sleep ioremap                    # maps through the vmalloc area with GFP_KERNEL
+
+# Deliberately NOT listed (non-sleeping, or not decided here):
+#   _raw_spin_lock/_trylock/_unlock, mutex_trylock, down_read_trylock, up_read,
+#   call_rcu, __rcu_read_lock/unlock, __udelay (busy-waits), rcuwait_wake_up.
+#   put_device, dma_free_attrs, __mmdrop, drm_gem_object_free,
+#   list_lru_walk_node: may sleep in some paths (release callbacks); left
+#   unmodelled and listed in the summary file as unmodelled externals.
