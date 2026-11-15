@@ -13,6 +13,12 @@ non-trivial kernel C through them. Reproduce with `scripts/kernel_helpers.sh`.
 
 347 functions are defined in the module; 341 of them are `rust_helper_*`.
 
+One header line was edited by hand: `# module:` in `helpers.clsc_summary`
+(and in the two verdict files) now names the source, "rust/helpers/helpers.ll
+(Linux 6.18, x86-64 defconfig)", instead of the local path the pass printed.
+A rerun writes your own path there; the records and the `ir-sha256` and
+`config-sha256` keys do not depend on it.
+
 ## What the numbers say
 
 **The built-in name list is not enough on real IR.** With only the five
