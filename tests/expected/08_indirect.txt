@@ -1,0 +1,8 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/08_indirect.ll
+
+  [MAY SLEEP  ]  both           -- calls blocking primitive 'mutex_lock()'
+  [UNKNOWN    ]  calls_via_ptr  -- reaches callee via_ptr() with an unresolved indirect call
+  [UNKNOWN    ]  via_ptr        -- indirect call through a function pointer (unresolved)
+
+summary: 1 may-sleep, 0 conditional, 2 unknown, 0 atomic-safe (3 functions analysed)

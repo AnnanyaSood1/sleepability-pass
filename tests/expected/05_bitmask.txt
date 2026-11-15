@@ -2,6 +2,6 @@
 module: build/ll/05_bitmask.ll
 
   [MAY SLEEP  ]  wrap_alloc          -- calls kmalloc() with direct-reclaim gfp flags (may sleep)
-  [MAY SLEEP  ]  wrap_alloc_unknown  -- calls kmalloc() with non-constant gfp flags (conservatively may sleep)
+  [IF-FLAGS   ]  wrap_alloc_unknown  -- may sleep iff arg 1 has the reclaim bit (passed to kmalloc())
 
-summary: 2 may-sleep, 0 atomic-safe (2 functions analysed)
+summary: 1 may-sleep, 1 conditional, 0 unknown, 0 atomic-safe (2 functions analysed)

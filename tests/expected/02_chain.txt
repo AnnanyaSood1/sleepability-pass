@@ -5,4 +5,4 @@ module: build/ll/02_chain.ll
   [MAY SLEEP  ]  level2  -- reaches may-sleep callee level1()
   [MAY SLEEP  ]  level3  -- reaches may-sleep callee level2()
 
-summary: 3 may-sleep, 0 atomic-safe (3 functions analysed)
+summary: 3 may-sleep, 0 conditional, 0 unknown, 0 atomic-safe (3 functions analysed)

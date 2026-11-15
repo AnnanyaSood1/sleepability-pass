@@ -1,0 +1,8 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/09_primitives_file.ll
+
+  [ATOMIC-SAFE]  alloc_atomic2  -- no path to a blocking primitive
+  [MAY SLEEP  ]  alloc_kernel2  -- calls __kmalloc_noprof() with direct-reclaim gfp flags (may sleep)
+  [MAY SLEEP  ]  waiter         -- calls blocking primitive 'wait_for_completion()'
+
+summary: 2 may-sleep, 0 conditional, 0 unknown, 1 atomic-safe (3 functions analysed)

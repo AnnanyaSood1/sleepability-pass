@@ -5,4 +5,4 @@ module: build/ll/03_nonsleeping.ll
   [ATOMIC-SAFE]  copy_thing  -- no path to a blocking primitive
   [ATOMIC-SAFE]  sum_array   -- no path to a blocking primitive
 
-summary: 0 may-sleep, 3 atomic-safe (3 functions analysed)
+summary: 0 may-sleep, 0 conditional, 0 unknown, 3 atomic-safe (3 functions analysed)

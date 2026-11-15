@@ -1,0 +1,8 @@
+# clsc-summary 1
+# reclaim-mask: 0x400
+# indirect-calls: unknown
+atomic_safe caller_atomic
+may_sleep caller_kernel via=caller_kernel>rust_helper_krealloc_like>kmalloc
+atomic_safe caller_masked
+if_arg rust_helper_krealloc_like arg=2 mask=0x400 via=rust_helper_krealloc_like>kmalloc
+if_arg two_level arg=1 mask=0x400 via=two_level>rust_helper_krealloc_like>kmalloc

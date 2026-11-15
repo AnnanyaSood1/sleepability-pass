@@ -43,6 +43,33 @@ done
 "$LINK" -S -o build/ll/linked.ll build/ll/probe.ll build/ll/helper.ll
 check "linked" build/ll/linked.ll
 
+# Primitive table extended from a file.
+"$CLANG" -S -emit-llvm -O0 -o build/ll/09_primitives_file.ll tests/prim/09_primitives_file.c 2>/dev/null
+run() { "$OPT" -load-pass-plugin "$PLUGIN" -passes=sleepability \
+          -sleepability-primitives=tests/prim/extra.primitives -disable-output "$1" 2>&1; }
+check "09_primitives_file" build/ll/09_primitives_file.ll
+
+# Summary file: records, witness chains, and the IR-hash cache.
+# Header lines that depend on the toolchain or the path are left out of the diff.
+SUM=build/ll/07.clsc_summary; rm -f "$SUM"
+run() { "$OPT" -load-pass-plugin "$PLUGIN" -passes=sleepability \
+          -sleepability-summary="$SUM" -disable-output "$1" >/dev/null 2>&1
+        grep -v -E '^# (producer|module|ir-sha256|config-sha256):' "$SUM"; }
+check "summary_file" build/ll/07_flag_forwarding.ll
+if [[ "$MODE" != "--update" ]]; then
+  again="$("$OPT" -load-pass-plugin "$PLUGIN" -passes=sleepability \
+            -sleepability-summary="$SUM" -disable-output build/ll/07_flag_forwarding.ll 2>&1)"
+  if [[ "$again" == "summary up to date"* ]]; then echo "PASS  summary_cache"; ((pass++))
+  else echo "FAIL  summary_cache"; ((fail++)); [[ "$MODE" == "-v" ]] && echo "$again"; fi
+  # A different configuration (here: an extended primitive table) must not
+  # reuse the cached summary, even though the IR is the same.
+  other="$("$OPT" -load-pass-plugin "$PLUGIN" -passes=sleepability \
+            -sleepability-primitives=tests/prim/extra.primitives \
+            -sleepability-summary="$SUM" -disable-output build/ll/07_flag_forwarding.ll 2>&1)"
+  if [[ "$other" != "summary up to date"* ]]; then echo "PASS  summary_cache_config"; ((pass++))
+  else echo "FAIL  summary_cache_config"; ((fail++)); fi
+fi
+
 echo "----"
 [[ "$MODE" == "--update" ]] && { echo "expected outputs regenerated"; exit 0; }
 echo "$pass passed, $fail failed"

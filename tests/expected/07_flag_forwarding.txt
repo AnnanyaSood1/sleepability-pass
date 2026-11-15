@@ -1,0 +1,10 @@
+=== Sleepability analysis (C-side CanSleep summary) ===
+module: build/ll/07_flag_forwarding.ll
+
+  [ATOMIC-SAFE]  caller_atomic              -- no path to a blocking primitive
+  [MAY SLEEP  ]  caller_kernel              -- calls rust_helper_krealloc_like() with direct-reclaim gfp flags (may sleep)
+  [ATOMIC-SAFE]  caller_masked              -- no path to a blocking primitive
+  [IF-FLAGS   ]  rust_helper_krealloc_like  -- may sleep iff arg 2 has the reclaim bit (passed to kmalloc())
+  [IF-FLAGS   ]  two_level                  -- may sleep iff arg 1 has the reclaim bit (passed to rust_helper_krealloc_like())
+
+summary: 1 may-sleep, 2 conditional, 0 unknown, 2 atomic-safe (5 functions analysed)

@@ -1,0 +1,3 @@
+# Extra primitives for test 09. Format: 'sleep NAME' or 'gfp NAME ARGINDEX'.
+sleep wait_for_completion
+gfp   __kmalloc_noprof 1

@@ -4,4 +4,4 @@ module: build/ll/04_gfp.ll
   [ATOMIC-SAFE]  alloc_atomic  -- no path to a blocking primitive
   [MAY SLEEP  ]  alloc_sleepy  -- calls kmalloc() with direct-reclaim gfp flags (may sleep)
 
-summary: 1 may-sleep, 1 atomic-safe (2 functions analysed)
+summary: 1 may-sleep, 0 conditional, 0 unknown, 1 atomic-safe (2 functions analysed)
