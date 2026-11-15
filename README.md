@@ -1,101 +1,88 @@
-# Sleepability Pass — a C-side `CanSleep` summary for the Linux kernel
+# Sleepability Pass: a C-side sleepability summary for the Linux kernel
 
-<!-- After the first push, replace AnnanyaSood1/sleepability-pass below with your GitHub path (e.g. jane/sleepability-pass). -->
 [![build-and-test](https://github.com/AnnanyaSood1/sleepability-pass/actions/workflows/ci.yml/badge.svg)](https://github.com/AnnanyaSood1/sleepability-pass/actions/workflows/ci.yml)
 
-An out-of-tree **LLVM module analysis pass** (new pass manager) that decides, for
-every function in a module, whether it **may sleep**: whether it can, directly or
-transitively, reach a blocking primitive. This is the "callee summary" that a
-caller in atomic context (an interrupt handler, a spinlock critical section)
-needs in order to know it must not make the call.
+An out-of-tree **LLVM module analysis pass** (new pass manager) that decides,
+for every function in a module, whether it **may sleep**: whether it can,
+directly or through its callees, reach a blocking primitive. A caller in
+atomic context (holding a spinlock, in an interrupt handler) must not make
+such a call.
+
+This is the C side of **CLSC, the Context-Lattice Sleepability Checker**. The
+Rust side, which tracks the atomic context, and the join at the foreign call
+site are in the companion repository
+[`guardstate`](https://github.com/AnnanyaSood1/guardstate), which reads the
+summary file this pass writes.
 
 ```
 $ opt -load-pass-plugin build/libSleepability.so -passes=sleepability \
-      -disable-output build/ll/04_gfp.ll
+      -disable-output build/ll/07_flag_forwarding.ll
 
-=== Sleepability analysis (C-side CanSleep summary) ===
-module: build/ll/04_gfp.ll
+  [ATOMIC-SAFE]  caller_atomic              -- no path to a blocking primitive
+  [MAY SLEEP  ]  caller_kernel              -- calls rust_helper_krealloc_like() with direct-reclaim gfp flags (may sleep)
+  [ATOMIC-SAFE]  caller_masked              -- no path to a blocking primitive
+  [IF-FLAGS   ]  rust_helper_krealloc_like  -- may sleep iff arg 2 has the reclaim bit (passed to kmalloc())
+  [IF-FLAGS   ]  two_level                  -- may sleep iff arg 1 has the reclaim bit (passed to rust_helper_krealloc_like())
 
-  [ATOMIC-SAFE]  alloc_atomic  -- no path to a blocking primitive
-  [MAY SLEEP  ]  alloc_sleepy  -- calls kmalloc() with direct-reclaim gfp flags (may sleep)
-
-summary: 1 may-sleep, 1 atomic-safe (2 functions analysed)
+summary: 1 may-sleep, 2 conditional, 0 unknown, 2 atomic-safe (5 functions analysed)
 ```
 
-## What this is (and what it is not)
+## What it computes
 
-This is the **standalone C-side half of a Cross-Language Sleepability Checker
-(CLSC)**. It answers one concrete question that a full checker also has to
-answer: *given the C call graph, which functions may sleep?* Everything else in
-the larger design — the Rust typestate that tracks atomic vs. sleepable context,
-and the FFI join that connects a Rust caller to this C summary across the
-`rust_helper_*` boundary — is **deliberately out of scope here** and is future
-work. This artifact does not claim CLSC works; it demonstrates that the
-interprocedural static-analysis core of its C side is real, builds, and runs.
+Each function gets one of four verdicts:
 
-## The analysis in four steps
+| Verdict | Meaning |
+| --- | --- |
+| `ATOMIC-SAFE` | no path reaches a blocking primitive |
+| `IF-FLAGS` | may sleep **iff** a given argument has the gfp direct-reclaim bit |
+| `UNKNOWN` | reaches a call through a function pointer, which the pass cannot resolve |
+| `MAY SLEEP` | some path reaches a blocking primitive, whatever the arguments |
 
-1. **Build the call graph** (`llvm::CallGraph`).
-2. **Mark leaf blocking primitives by name** — `mutex_lock`, `schedule`,
-   `msleep`, `might_sleep` — plus the argument-sensitive allocator `kmalloc`.
-3. **Propagate `CanSleep` bottom-up over strongly connected components.**
-   `llvm::scc_iterator` visits SCCs in reverse-topological order, so every callee
-   is finalised before its callers. An SCC (including a recursive cycle) collapses
-   to a single verdict: if any member reaches a blocking primitive, all members
-   may sleep.
-4. **Print a deterministic per-function verdict** with a short reason.
+`IF-FLAGS` is what makes allocation decidable. In Linux 6.18 the Rust helper
+for allocation forwards the caller's flags to the allocator; the helper is
+IF-FLAGS, and each call is decided by the flags passed at that call.
 
-Terminology note: `CanSleep == true` is reported as `MAY SLEEP`; `CanSleep ==
-false` as `ATOMIC-SAFE` (safe to call from atomic context). This is the property
-of a *function*; a full checker pairs it with the *context* at each call site.
+## How it works
 
-### Argument sensitivity: `kmalloc` and gfp flags
+1. **Primitives.** Blocking primitives and allocators are matched by name. The
+   built-in table is `mutex_lock`, `schedule`, `msleep`, `might_sleep` and
+   `kmalloc`; `-sleepability-primitives=FILE` extends it for a real kernel
+   (`config/linux-6.18.primitives`).
+2. **Flags.** For an allocator call the pass asks whether the flags carry
+   `__GFP_DIRECT_RECLAIM` (0x400 in Linux 6.18). Constants are decided exactly;
+   `x | GFP_KERNEL` always has the bit; `x & ~__GFP_DIRECT_RECLAIM` never does;
+   a parameter makes the function IF-FLAGS on that parameter; anything else is
+   conservatively MAY SLEEP. These are a small set of known-bits rules, not
+   LLVM's general known-bits analysis.
+3. **Propagation.** Summaries are propagated bottom-up over the call graph's
+   strongly connected components (`llvm::scc_iterator`), iterating inside each
+   SCC until nothing changes, so recursion and mutual recursion are handled and
+   conditions are carried through any number of wrappers.
+4. **Output.** A deterministic per-function report, and optionally a
+   `.clsc_summary` file with a witness chain for each function.
 
-`kmalloc(size, flags)` may sleep **iff** its gfp flags request direct reclaim.
-The pass keys off the `__GFP_DIRECT_RECLAIM` bit: `GFP_KERNEL` sets it (may
-sleep), `GFP_ATOMIC` does not (atomic-safe). So `kmalloc(n, GFP_KERNEL)` is
-flagged and `kmalloc(n, GFP_ATOMIC)` is not — the pass is sensitive to the
-*value of an argument*, not just the callee name.
-
-As a stretch, the pass also performs **intraprocedural known-bits reasoning**:
-`kmalloc(n, extra | GFP_KERNEL)` is caught even though `extra` is unknown,
-because an `or` with a constant that sets the reclaim bit sets it regardless of
-the other operand.
-
-## Design rationale
-
-Every design choice below is forced by the one before it — the engineering falls
-out of the analysis theory. The one-page figure walks the full chain (problem →
-reachability → least fixpoint → SCC bottom-up → argument sensitivity → honest
-limits); `docs/DESIGN.md` gives the prose, including the soundness argument.
-
-![Design rationale, from first principles](docs/img/design-rationale.png)
-
-*(High-resolution PDF: [`docs/img/design-rationale.pdf`](docs/img/design-rationale.pdf).)*
+`docs/DESIGN.md` gives the lattice, the transfer, the termination and
+soundness arguments, and the boundaries.
 
 ## Build
 
-Requires an LLVM/Clang toolchain (developed and tested against **LLVM 18** on
-Ubuntu 24.04) and CMake ≥ 3.20. Ninja is used if present.
+Requires LLVM/Clang 18 (developed on Ubuntu 24.04) and CMake 3.20 or newer.
 
 ```sh
 # Ubuntu: sudo apt-get install llvm-18-dev clang-18 cmake ninja-build
 ./scripts/build.sh
 ```
 
-`build.sh` auto-detects `llvm-config`; override with
-`LLVM_CONFIG=llvm-config-17 ./scripts/build.sh`. The result is
-`build/libSleepability.so` (`.dylib` on macOS).
+`build.sh` finds `llvm-config`; override with `LLVM_CONFIG=llvm-config-17
+./scripts/build.sh`. The result is `build/libSleepability.so`.
 
 ## Run the tests
 
 ```sh
-./scripts/run_tests.sh        # compile each test to IR, run the pass, diff vs expected
-./scripts/run_tests.sh -v     # show diffs on any failure
-./scripts/run_tests.sh --update   # regenerate tests/expected/*.txt
+./scripts/run_tests.sh            # compile each test to IR, run, diff against expected
+./scripts/run_tests.sh -v         # show diffs on failure
+./scripts/run_tests.sh --update   # regenerate tests/expected/
 ```
-
-Expected result:
 
 ```
 PASS  01_direct_mutex
@@ -104,114 +91,99 @@ PASS  03_nonsleeping
 PASS  04_gfp
 PASS  05_bitmask
 PASS  06_recursion
+PASS  07_flag_forwarding
+PASS  08_indirect
 PASS  linked
+PASS  09_primitives_file
+PASS  summary_file
+PASS  summary_cache
+PASS  summary_cache_config
 ----
-7 passed, 0 failed
+13 passed, 0 failed
 ```
 
-## Results
+| Test | What it checks | Expected |
+| --- | --- | --- |
+| `01_direct_mutex` | a `rust_helper_*`-style shim forwarding to a primitive | MAY SLEEP |
+| `02_chain` | transitivity, three levels deep | all MAY SLEEP |
+| `03_nonsleeping` | genuinely atomic-safe code, including `memcpy` | all ATOMIC-SAFE |
+| `04_gfp` | `GFP_KERNEL` against `GFP_ATOMIC`, the precision control | MAY SLEEP / ATOMIC-SAFE |
+| `05_bitmask` | `extra \| GFP_KERNEL` always has the bit; `extra \| GFP_ATOMIC` has it iff `extra` does | MAY SLEEP / IF-FLAGS |
+| `06_recursion` | SCC collapse: a sleeping cycle and a clean cycle | MAY SLEEP / ATOMIC-SAFE |
+| `07_flag_forwarding` | flags forwarded through two wrappers, shaped like `rust/helpers/slab.c` | per caller: safe, sleeps, masked |
+| `08_indirect` | a call through a function pointer | UNKNOWN, never silently safe |
+| `linked` | cross-translation-unit propagation after `llvm-link` | MAY SLEEP |
+| `09_primitives_file` | the primitive table extended from a file | MAY SLEEP / ATOMIC-SAFE |
+| `summary_file` | the `.clsc_summary` records and witness chains | frozen file |
+| `summary_cache` | an unchanged module is not recomputed | "summary up to date" |
+| `summary_cache_config` | the same module with a different primitive table is recomputed | not reused |
 
-The suite builds against LLVM 18 and passes in full, on every push, verified by
-CI (badge above):
-
-```
-PASS  01_direct_mutex     rust_helper shim -> mutex_lock            MAY SLEEP
-PASS  02_chain            level3 -> level2 -> level1 -> schedule    MAY SLEEP (transitivity)
-PASS  03_nonsleeping      pure computation                         ATOMIC-SAFE
-PASS  04_gfp              kmalloc(GFP_KERNEL) vs kmalloc(GFP_ATOMIC) split correctly
-PASS  05_bitmask          extra | GFP_KERNEL caught (known-bits)
-PASS  06_recursion        sleeping cycle vs clean cycle            SCC collapse
-PASS  linked              cross-TU probe -> helper -> mutex_lock    MAY SLEEP
-----
-7 passed, 0 failed        (17 functions over 7 modules, 11 may-sleep / 6 atomic-safe)
-```
-
-**What this demonstrates, stated honestly.** The interprocedural core is
-implemented and correct across the properties that matter: transitivity, cycles
-(SCCs), argument sensitivity, intraprocedural known-bits, and cross–translation-unit
-propagation. Each test isolates one property, with a near-miss control
-(`GFP_ATOMIC` beside `GFP_KERNEL`) so precision is shown, not just recall.
-
-**What it does not yet claim.** These inputs were written to exercise the analysis,
-so passing them proves the analysis is *correct on them* — a proof of concept, not
-an empirical result on third-party code. Running the pass over real
-`rust_helper_*` wrappers or a slice of kernel IR, and reporting what it finds
-(including where it is wrong), is the evaluation step and is future work. The
-verdict of a function is sound-by-construction for the modelled primitives: where
-the pass cannot prove atomic-safety (unknown gfp flags, indirect calls) it
-over-approximates to `MAY SLEEP` rather than risk a silent miss.
-
-## Run it on your own code
+## The summary file
 
 ```sh
-clang-18 -S -emit-llvm -O0 mycode.c -o mycode.ll
-opt-18 -load-pass-plugin build/libSleepability.so \
-       -passes=sleepability -disable-output mycode.ll
+opt -load-pass-plugin build/libSleepability.so -passes=sleepability \
+    -disable-output -sleepability-summary=helpers.clsc_summary helpers.ll
 ```
 
-No kernel build is required: the primitives are recognised by name as external
-declarations, so ordinary `.c` files compiled with `clang -S -emit-llvm` are
-enough. Multiple translation units can be combined with `llvm-link` first (see
-the `linked` test) for whole-program interprocedural results.
+```
+# clsc-summary 1
+# ir-sha256: 2fd44762...
+# reclaim-mask: 0x400
+if_arg    rust_helper_krealloc_node_align arg=3 mask=0x400 via=rust_helper_krealloc_node_align>krealloc_node_align_noprof
+may_sleep rust_helper_mutex_lock via=rust_helper_mutex_lock>mutex_lock
+unknown   rust_helper_poll_wait via=rust_helper_poll_wait>(indirect)
+atomic_safe rust_helper_spin_unlock
+```
 
-## Test suite
+If the file already exists for the same IR and the same configuration (the
+SHA-256 of each is in the header), the pass does not recompute it. `guardstate` reads this file.
 
-The suite mirrors the fault-injection design of the research proposal in
-miniature: each input isolates one property, with a near-miss control for
-precision.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `-sleepability-summary=FILE` | none | write the summary file |
+| `-sleepability-primitives=FILE` | none | extend the primitive table (`sleep NAME`, `gfp NAME ARGINDEX`) |
+| `-sleepability-reclaim-mask=N` | `0x400` | the direct-reclaim bit of the analysed kernel |
+| `-sleepability-indirect=unknown\|ignore` | `unknown` | `ignore` treats function pointers as safe (unsound; for comparison only) |
 
-| Test | What it exercises | Expected |
-|------|-------------------|----------|
-| `01_direct_mutex` | `rust_helper_*`-style shim forwarding to a primitive | `rust_helper_mutex_lock` **may sleep** |
-| `02_chain` | transitivity three levels deep | `level1/2/3` all **may sleep** |
-| `03_nonsleeping` | genuinely atomic-safe code (incl. `memcpy`) | all **atomic-safe** |
-| `04_gfp` | argument sensitivity — the precision control | `GFP_KERNEL` **may sleep**, `GFP_ATOMIC` **atomic-safe** |
-| `05_bitmask` | known-bits: `extra \| GFP_KERNEL` still caught; unknown flags stay conservative | both **may sleep** (one provable, one conservative) |
-| `06_recursion` | SCC collapse for recursive cycles | sleeping cycle both **may sleep**; clean cycle both **atomic-safe** |
-| `linked` | cross–translation-unit interprocedural (`llvm-link`) | probe in one file, helper in another, both **may sleep** |
+## Results on Linux 6.18
 
-Across the suite: 17 functions over 7 modules, 11 may-sleep / 6 atomic-safe, all
-classified as expected.
+`results/linux-6.18/` is the first run on real kernel IR: the Rust helpers
+(`rust/helpers/helpers.ll`, x86-64 `defconfig`, clang 18, `-O2`). Reproduce with
+`./scripts/kernel_helpers.sh /path/to/linux`.
 
-## Limitations and future work
+| Primitive table | May sleep | Conditional | Unknown | Atomic-safe |
+| --- | ---: | ---: | ---: | ---: |
+| built-in only | 2 | 0 | 3 | 342 |
+| with `config/linux-6.18.primitives` | 20 | 4 | 2 | 321 |
 
-Calibrated scope, stated honestly:
+The first row shows that a name list written for test inputs is not enough on
+real IR; the second shows the four allocator helpers coming out conditional on
+their flags argument, as designed. The results README states what the run does
+not show, including the 37 external functions left unmodelled.
 
-- **Name-based primitive recognition.** Blocking primitives are matched by
-  symbol name. Macro-expanded or aliased spellings, and a real kernel's full
-  primitive set, are not modelled beyond the demonstrative list.
-- **Indirect calls are not resolved.** Calls through function pointers are
-  skipped (no call-graph edge is followed). Sound handling would treat them
-  conservatively or require points-to information.
-- **gfp handling is intraprocedural.** The literal and known-bits cases are
-  handled. *Interprocedural* flag threading — a forwarding wrapper
-  `f(n, flags){ return kmalloc(n, flags); }` whose caller passes `GFP_KERNEL` —
-  is not: deciding it needs argument-value propagation across call boundaries.
-  This is the exact boundary marked for the proposal's constant/bitmask
-  propagation work.
-- **No context sensitivity.** A function has one verdict for all call sites.
-- **The reclaim bit is modelled** as `0x400` (matching recent kernels); in
-  production it would be read from the kernel's `gfp_types.h` rather than
-  hard-coded.
-- **The Rust typestate side and the FFI join are not here.** They are the other
-  halves of CLSC and remain future work.
+## Limitations
+
+- **The primitive table is configuration.** Sleeping externals that are not in
+  the table are assumed not to sleep. The summary file lists every unmodelled
+  external so the gap is visible.
+- **Function pointers are UNKNOWN**, not resolved, on the C side.
+- **Inline assembly** is assumed not to enter the scheduler.
+- **One verdict per function**, beyond the argument conditions; one kernel
+  configuration per summary.
 
 ## Repository layout
 
 ```
-src/SleepabilityPass.cpp   the pass (call graph + SCC fixpoint + gfp arg-sensitivity)
-CMakeLists.txt             out-of-tree plugin build
-scripts/build.sh           configure + build
-scripts/run_tests.sh       compile tests to IR, run, diff vs expected
-tests/*.c                  kernel-shaped inputs
-tests/link/*.c             cross-TU inputs (linked with llvm-link)
-tests/gfp.h                self-contained gfp flag model
-tests/expected/*.txt       frozen expected output
-docs/DESIGN.md             design notes: algorithm, soundness, decisions
-docs/img/                  one-page design-rationale figure (png + pdf)
+src/SleepabilityPass.cpp      the pass
+config/linux-6.18.primitives  primitive table for Linux 6.18, checked against the source
+results/linux-6.18/           first run on the kernel's Rust helpers
+scripts/build.sh              configure and build
+scripts/run_tests.sh          compile tests to IR, run, diff against expected
+scripts/kernel_helpers.sh     reproduce the kernel results
+tests/*.c, tests/link, tests/prim   test inputs
+tests/expected/               frozen expected outputs
+docs/DESIGN.md                design: lattice, transfer, soundness, boundaries
 ```
-
-## Authorship and provenance
 
 ## Authorship
 

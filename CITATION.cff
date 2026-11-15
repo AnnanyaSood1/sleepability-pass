@@ -5,8 +5,8 @@ abstract: >-
   A standalone out-of-tree LLVM module pass that computes, per function, whether
   it may sleep (the kernel CanSleep property) by propagating reachability to
   blocking primitives bottom-up over the call graph's strongly connected
-  components, with argument-sensitive handling of kmalloc gfp flags. The C-side
-  (callee-summary) half of a proposed cross-language sleepability checker (CLSC).
+  components, with argument-sensitive (parametric) handling of gfp flags. The
+  C-side (callee-summary) half of CLSC, the Context-Lattice Sleepability Checker.
 authors:
   - family-names: Sood
     given-names: Annanya
